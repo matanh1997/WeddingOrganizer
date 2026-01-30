@@ -2,49 +2,33 @@ import { Telegraf, Markup } from 'telegraf';
 import { Message } from 'telegraf/types';
 import { config, GROUPS, GroupId } from './config';
 import { getSession, createSession, updateSession, Session } from './db/sessions';
-import { appendGuestToSheet } from './services/sheets';
+import { 
+  appendGuestToSheet, 
+  getExistingGuest, 
+  deleteGuest,
+  normalizePhoneNumber,
+  ExistingGuest 
+} from './services/sheets';
 
 // Create bot instance
 export const bot = new Telegraf(config.telegram.token);
 
 // Helper to format phone number for display
 function formatPhone(phone: string): string {
-  if (phone.startsWith('+972') && phone.length >= 12) {
-    const local = phone.slice(4);
+  // First normalize the phone
+  const normalized = normalizePhoneNumber(phone);
+  
+  if (normalized.startsWith('+972') && normalized.length >= 13) {
+    const local = normalized.slice(4);
     return `+972-${local.slice(0, 2)}-${local.slice(2, 5)}-${local.slice(5)}`;
   }
-  return phone;
+  return normalized;
 }
 
-// Normalize phone number to +972 format
-function normalizePhone(phone: string): string {
-  // Remove all non-digit characters except +
-  let cleaned = phone.replace(/[^\d+]/g, '');
-  
-  // If starts with 0, replace with +972 (Israeli local format)
-  if (cleaned.startsWith('0')) {
-    cleaned = '+972' + cleaned.slice(1);
-  }
-  // If starts with 972 without +, add the +
-  else if (cleaned.startsWith('972')) {
-    cleaned = '+' + cleaned;
-  }
-  // If doesn't start with +, assume it needs +972
-  else if (!cleaned.startsWith('+')) {
-    cleaned = '+972' + cleaned;
-  }
-  
-  return cleaned;
-}
-
-// Extract phone numbers from a contact
-function extractPhones(contact: Message.ContactMessage['contact']): string[] {
-  const phones: string[] = [];
-  if (contact.phone_number) {
-    const phone = normalizePhone(contact.phone_number);
-    phones.push(phone);
-  }
-  return phones;
+// Extract and normalize phone from contact
+function extractPhone(contact: Message.ContactMessage['contact']): string | null {
+  if (!contact.phone_number) return null;
+  return normalizePhoneNumber(contact.phone_number);
 }
 
 // /start command
@@ -95,22 +79,95 @@ bot.on('contact', async (ctx) => {
     session = createSession(userId);
   }
 
-  const phones = extractPhones(contact);
+  const phone = extractPhone(contact);
   
-  if (phones.length === 0) {
+  if (!phone) {
     await ctx.reply('❌ לאיש הקשר אין מספר טלפון. נסו איש קשר אחר.');
     return;
   }
 
-  const phone = phones[0];
+  // Check if this phone already exists
+  const existingGuest = getExistingGuest(phone);
+  
+  if (existingGuest) {
+    // Show existing entry and ask if they want to replace
+    updateSession(userId, {
+      state: 'CONFIRM_REPLACE',
+      selected_phone: phone,
+    });
+
+    await ctx.reply(
+      `⚠️ *מספר זה כבר קיים ברשימה!*\n\n` +
+      `👤 *שם:* ${existingGuest.guestName}\n` +
+      `📞 *טלפון:* ${formatPhone(existingGuest.phoneNumber)}\n` +
+      `👥 *קבוצה:* ${existingGuest.group}\n` +
+      `📅 *נוסף:* ${new Date(existingGuest.timestamp).toLocaleDateString('he-IL')}\n\n` +
+      `האם למחוק ולהחליף?`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('✅ כן, החלף / Yes, replace', 'replace:yes')],
+          [Markup.button.callback('❌ לא, בטל / No, cancel', 'replace:no')],
+        ])
+      }
+    );
+    return;
+  }
+
+  // No duplicate, proceed normally
   updateSession(userId, {
     state: 'AWAITING_NAME',
-    phone_numbers: JSON.stringify(phones),
+    phone_numbers: JSON.stringify([phone]),
     selected_phone: phone,
   });
 
   const displayPhone = formatPhone(phone);
   await ctx.reply(
+    `✅ *מספר:* ${displayPhone}\n\n` +
+    '📝 עכשיו הקלידו את *שם האורח המלא*:',
+    { parse_mode: 'Markdown' }
+  );
+});
+
+// Handle replace confirmation
+bot.action(/^replace:(yes|no)$/, async (ctx) => {
+  const userId = ctx.from!.id;
+  const choice = ctx.match[1];
+  
+  const session = getSession(userId);
+  if (!session || session.state !== 'CONFIRM_REPLACE') {
+    await ctx.answerCbQuery('שלחו איש קשר להתחלה');
+    return;
+  }
+
+  const phone = session.selected_phone;
+  
+  if (choice === 'no' || !phone) {
+    createSession(userId);
+    await ctx.answerCbQuery('בוטל');
+    await ctx.editMessageText('❌ בוטל. שלחו איש קשר להוספת אורח חדש.');
+    return;
+  }
+
+  // Delete existing and proceed
+  await ctx.answerCbQuery('מוחק...');
+  
+  const deleted = await deleteGuest(phone);
+  if (!deleted) {
+    await ctx.editMessageText('❌ שגיאה במחיקה. נסו שוב.');
+    createSession(userId);
+    return;
+  }
+
+  // Now proceed with adding
+  updateSession(userId, {
+    state: 'AWAITING_NAME',
+    phone_numbers: JSON.stringify([phone]),
+  });
+
+  const displayPhone = formatPhone(phone);
+  await ctx.editMessageText(
+    `🗑️ הרשומה הקודמת נמחקה.\n\n` +
     `✅ *מספר:* ${displayPhone}\n\n` +
     '📝 עכשיו הקלידו את *שם האורח המלא*:',
     { parse_mode: 'Markdown' }
@@ -137,6 +194,10 @@ bot.on('text', async (ctx) => {
 
     case 'AWAITING_NAME':
       await handleNameInput(ctx, session, text);
+      break;
+
+    case 'CONFIRM_REPLACE':
+      await ctx.reply('👆 בחרו מהכפתורים למעלה.');
       break;
 
     default:

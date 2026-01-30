@@ -1,6 +1,5 @@
 import { config, validateConfig } from './config';
-import { initDatabase } from './db/database';
-import { initializeSheetHeaders } from './services/sheets';
+import { initializeSheetHeaders, loadExistingGuests } from './services/sheets';
 import { bot } from './bot';
 
 async function start() {
@@ -9,20 +8,15 @@ async function start() {
   // Validate configuration
   validateConfig();
 
-  // Initialize database
-  await initDatabase();
-
   // Initialize Google Sheets headers
   await initializeSheetHeaders();
+  
+  // Load existing guests into memory for duplicate detection
+  await loadExistingGuests();
 
   // Start bot
   if (config.webhookDomain) {
     // Webhook mode (for production on Railway/Render)
-    const secretPath = `/webhook/${bot.secretPathComponent()}`;
-    
-    await bot.telegram.setWebhook(`${config.webhookDomain}${secretPath}`);
-    
-    // Use launch with webhook
     await bot.launch({
       webhook: {
         domain: config.webhookDomain,
@@ -38,10 +32,8 @@ async function start() {
   }
 
   console.log('\n📋 Groups configured:');
-  console.log('   - Leehe - Friends');
-  console.log('   - Leehe - Family');
-  console.log('   - Matan - Friends');
-  console.log('   - Matan - Family');
+  console.log('   - Leehe: Friends, Family (Keisari/Maggor), Family Friends');
+  console.log('   - Matan: Friends, Family (Heled/Maimon), Family Friends');
   console.log('\n🎉 Bot is ready! Send a contact to add a guest.\n');
 }
 
