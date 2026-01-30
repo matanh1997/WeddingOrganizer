@@ -34,10 +34,13 @@ export async function appendGuestToSheet(entry: GuestEntry): Promise<void> {
 
   const sheets = getSheetsClient();
   
+  // Prefix phone number with ' to force text format in Google Sheets
+  const phoneAsText = "'" + entry.phoneNumber;
+  
   const values = [[
     entry.timestamp,
     entry.guestName,
-    entry.phoneNumber,
+    phoneAsText,
     entry.group,
     entry.addedBy,
   ]];

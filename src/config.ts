@@ -6,12 +6,16 @@ dotenv.config();
 export const GROUPS = {
   // Leehe
   leehe_friends: 'Leehe - Friends',
-  leehe_keisari: 'Leehe - Family - Keisari',
-  leehe_magor: 'Leehe - Family - Magor',
+  leehe_family_keisari: 'Leehe - Family - Keisari',
+  leehe_family_maggor: 'Leehe - Family - Maggor',
+  leehe_familyfriends_keisari: 'Leehe - Family Friends - Keisari',
+  leehe_familyfriends_maggor: 'Leehe - Family Friends - Maggor',
   // Matan
   matan_friends: 'Matan - Friends',
-  matan_heled: 'Matan - Family - Heled',
-  matan_maimon: 'Matan - Family - Maimon',
+  matan_family_heled: 'Matan - Family - Heled',
+  matan_family_maimon: 'Matan - Family - Maimon',
+  matan_familyfriends_heled: 'Matan - Family Friends - Heled',
+  matan_familyfriends_maimon: 'Matan - Family Friends - Maimon',
 } as const;
 
 export type GroupId = keyof typeof GROUPS;

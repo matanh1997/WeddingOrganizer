@@ -5,7 +5,7 @@ export type SessionState =
   | 'AWAITING_NAME' 
   | 'PICK_PERSON'      // Leehe or Matan
   | 'PICK_TYPE'        // Family or Friends
-  | 'PICK_FAMILY'      // Heled/Maimon or Keisari/Magor
+  | 'PICK_FAMILY'      // Heled/Maimon or Keisari/Maggor
   | 'DONE';
 
 export interface Session {
