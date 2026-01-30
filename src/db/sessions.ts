@@ -1,30 +1,40 @@
 import { getDb, saveDatabase } from './database';
 
-export type SessionState = 'NEW' | 'PICK_PHONE' | 'AWAITING_NAME' | 'AWAITING_GROUP' | 'DONE';
+export type SessionState = 
+  | 'NEW' 
+  | 'AWAITING_NAME' 
+  | 'PICK_PERSON'      // Leehe or Matan
+  | 'PICK_TYPE'        // Family or Friends
+  | 'PICK_FAMILY'      // Heled/Maimon or Keisari/Magor
+  | 'DONE';
 
 export interface Session {
-  sender_id: string;
+  user_id: number;
   state: SessionState;
   phone_numbers: string | null;
   selected_phone: string | null;
   guest_name: string | null;
+  selected_person: string | null;  // 'leehe' or 'matan'
+  selected_type: string | null;    // 'family' or 'friends'
   updated_at: number;
 }
 
-export function getSession(senderId: string): Session | null {
+export function getSession(userId: number): Session | null {
   const db = getDb();
-  const stmt = db.prepare('SELECT * FROM sessions WHERE sender_id = ?');
-  stmt.bind([senderId]);
+  const stmt = db.prepare('SELECT * FROM sessions WHERE user_id = ?');
+  stmt.bind([userId]);
   
   if (stmt.step()) {
     const row = stmt.getAsObject() as Record<string, unknown>;
     stmt.free();
     return {
-      sender_id: row.sender_id as string,
+      user_id: row.user_id as number,
       state: row.state as SessionState,
       phone_numbers: row.phone_numbers as string | null,
       selected_phone: row.selected_phone as string | null,
       guest_name: row.guest_name as string | null,
+      selected_person: row.selected_person as string | null,
+      selected_type: row.selected_type as string | null,
       updated_at: row.updated_at as number,
     };
   }
@@ -33,32 +43,33 @@ export function getSession(senderId: string): Session | null {
   return null;
 }
 
-export function createSession(senderId: string): Session {
+export function createSession(userId: number): Session {
   const db = getDb();
   const now = Date.now();
   
-  // Use INSERT OR REPLACE to handle existing sessions
   db.run(
-    `INSERT OR REPLACE INTO sessions (sender_id, state, phone_numbers, selected_phone, guest_name, updated_at)
-     VALUES (?, 'NEW', NULL, NULL, NULL, ?)`,
-    [senderId, now]
+    `INSERT OR REPLACE INTO sessions (user_id, state, phone_numbers, selected_phone, guest_name, selected_person, selected_type, updated_at)
+     VALUES (?, 'NEW', NULL, NULL, NULL, NULL, NULL, ?)`,
+    [userId, now]
   );
 
   saveDatabase();
 
   return {
-    sender_id: senderId,
+    user_id: userId,
     state: 'NEW',
     phone_numbers: null,
     selected_phone: null,
     guest_name: null,
+    selected_person: null,
+    selected_type: null,
     updated_at: now,
   };
 }
 
 export function updateSession(
-  senderId: string,
-  updates: Partial<Omit<Session, 'sender_id' | 'updated_at'>>
+  userId: number,
+  updates: Partial<Omit<Session, 'user_id' | 'updated_at'>>
 ): void {
   const db = getDb();
   const now = Date.now();
@@ -82,17 +93,21 @@ export function updateSession(
     setClauses.push('guest_name = ?');
     values.push(updates.guest_name);
   }
+  if (updates.selected_person !== undefined) {
+    setClauses.push('selected_person = ?');
+    values.push(updates.selected_person);
+  }
+  if (updates.selected_type !== undefined) {
+    setClauses.push('selected_type = ?');
+    values.push(updates.selected_type);
+  }
 
-  values.push(senderId);
+  values.push(userId);
   
   db.run(
-    `UPDATE sessions SET ${setClauses.join(', ')} WHERE sender_id = ?`,
+    `UPDATE sessions SET ${setClauses.join(', ')} WHERE user_id = ?`,
     values
   );
 
   saveDatabase();
-}
-
-export function resetSession(senderId: string): void {
-  createSession(senderId);
 }

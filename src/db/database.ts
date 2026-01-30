@@ -13,9 +13,6 @@ export function getDb(): Database {
   return db;
 }
 
-/**
- * Save the database to disk
- */
 export function saveDatabase(): void {
   if (!db) return;
   
@@ -25,59 +22,47 @@ export function saveDatabase(): void {
 }
 
 export async function initDatabase(): Promise<void> {
-  // Ensure data directory exists
   const dataDir = path.dirname(DB_PATH);
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true });
   }
 
-  // Initialize SQL.js
   const SQL = await initSqlJs();
 
-  // Load existing database or create new one
   if (fs.existsSync(DB_PATH)) {
     const fileBuffer = fs.readFileSync(DB_PATH);
     db = new SQL.Database(fileBuffer);
-    console.log('✅ Loaded existing database from:', DB_PATH);
+    console.log('✅ Loaded existing database');
   } else {
     db = new SQL.Database();
-    console.log('✅ Created new database at:', DB_PATH);
+    console.log('✅ Created new database');
   }
 
-  // Create sessions table
+  // Create/update sessions table with new columns
   db.run(`
     CREATE TABLE IF NOT EXISTS sessions (
-      sender_id TEXT PRIMARY KEY,
+      user_id INTEGER PRIMARY KEY,
       state TEXT NOT NULL DEFAULT 'NEW',
       phone_numbers TEXT,
       selected_phone TEXT,
       guest_name TEXT,
+      selected_person TEXT,
+      selected_type TEXT,
       updated_at INTEGER NOT NULL
     )
   `);
 
-  // Create processed_messages table for idempotency
-  db.run(`
-    CREATE TABLE IF NOT EXISTS processed_messages (
-      message_id TEXT PRIMARY KEY,
-      processed_at INTEGER NOT NULL
-    )
-  `);
+  // Add new columns if they don't exist (migration for existing DBs)
+  try {
+    db.run(`ALTER TABLE sessions ADD COLUMN selected_person TEXT`);
+  } catch { /* column exists */ }
+  
+  try {
+    db.run(`ALTER TABLE sessions ADD COLUMN selected_type TEXT`);
+  } catch { /* column exists */ }
 
-  // Save initial schema
   saveDatabase();
 
   // Auto-save every 30 seconds
-  setInterval(() => {
-    saveDatabase();
-  }, 30000);
-
-  console.log('✅ Database initialized');
-}
-
-export function closeDatabase(): void {
-  if (db) {
-    saveDatabase();
-    db.close();
-  }
+  setInterval(saveDatabase, 30000);
 }

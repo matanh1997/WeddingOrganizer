@@ -2,29 +2,24 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-export interface Group {
-  id: string;
-  displayName: string;
-}
+// Final group options (what gets saved to the sheet)
+export const GROUPS = {
+  // Leehe
+  leehe_friends: 'Leehe - Friends',
+  leehe_keisari: 'Leehe - Family - Keisari',
+  leehe_magor: 'Leehe - Family - Magor',
+  // Matan
+  matan_friends: 'Matan - Friends',
+  matan_heled: 'Matan - Family - Heled',
+  matan_maimon: 'Matan - Family - Maimon',
+} as const;
 
-export const GROUPS: Group[] = [
-  { id: 'leehe_friends', displayName: 'Leehe - Friends' },
-  { id: 'leehe_family', displayName: 'Leehe - Family' },
-  { id: 'matan_friends', displayName: 'Matan - Friends' },
-  { id: 'matan_family', displayName: 'Matan - Family' },
-];
+export type GroupId = keyof typeof GROUPS;
 
 export const config = {
-  // WhatsApp Cloud API
-  whatsapp: {
-    token: process.env.WHATSAPP_TOKEN || '',
-    phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || '',
-    appSecret: process.env.WHATSAPP_APP_SECRET || '',
-  },
-
-  // Webhook
-  webhook: {
-    verifyToken: process.env.WEBHOOK_VERIFY_TOKEN || '',
+  // Telegram Bot
+  telegram: {
+    token: process.env.TELEGRAM_BOT_TOKEN || '',
   },
 
   // Google Sheets
@@ -33,22 +28,13 @@ export const config = {
     sheetId: process.env.GOOGLE_SHEET_ID || '',
   },
 
-  // Server
+  // Server (for webhook mode, optional)
   port: parseInt(process.env.PORT || '3000', 10),
+  webhookDomain: process.env.WEBHOOK_DOMAIN || '',
 };
 
 export function validateConfig(): void {
-  const required = [
-    ['WHATSAPP_TOKEN', config.whatsapp.token],
-    ['WHATSAPP_PHONE_NUMBER_ID', config.whatsapp.phoneNumberId],
-    ['WEBHOOK_VERIFY_TOKEN', config.webhook.verifyToken],
-    ['GOOGLE_SHEET_ID', config.google.sheetId],
-  ];
-
-  const missing = required.filter(([, value]) => !value).map(([name]) => name);
-
-  if (missing.length > 0) {
-    console.warn(`Warning: Missing environment variables: ${missing.join(', ')}`);
+  if (!config.telegram.token) {
+    throw new Error('TELEGRAM_BOT_TOKEN is required!');
   }
 }
-
