@@ -1,0 +1,30 @@
+{
+  "name": "wedding-organizer-bot",
+  "version": "1.0.0",
+  "description": "WhatsApp bot for collecting wedding guest information",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node-dev --respawn src/index.ts",
+    "lint": "eslint src --ext .ts"
+  },
+  "keywords": ["whatsapp", "wedding", "bot"],
+  "author": "Matan & Leehe",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "sql.js": "^1.10.2",
+    "googleapis": "^130.0.0",
+    "axios": "^1.6.7",
+    "dotenv": "^16.4.1"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/sql.js": "^1.4.9",
+    "@types/node": "^20.11.16",
+    "typescript": "^5.3.3",
+    "ts-node-dev": "^2.0.0"
+  }
+}
+
