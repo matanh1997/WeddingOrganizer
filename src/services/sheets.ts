@@ -6,6 +6,8 @@ export interface GuestEntry {
   guestName: string;
   phoneNumber: string;
   group: string;
+  numGuests: number;
+  likelyArrive: boolean;
   addedBy: string;
 }
 
@@ -15,6 +17,8 @@ export interface ExistingGuest {
   guestName: string;
   phoneNumber: string;
   group: string;
+  numGuests: number;
+  likelyArrive: boolean;
   addedBy: string;
 }
 
@@ -73,7 +77,7 @@ export async function loadExistingGuests(): Promise<number> {
     
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: config.google.sheetId,
-      range: 'Sheet1!A:E',
+      range: 'Sheet1!A:G',
     });
 
     const rows = response.data.values;
@@ -87,17 +91,18 @@ export async function loadExistingGuests(): Promise<number> {
       const row = rows[i];
       if (row && row.length >= 3) {
         const phoneRaw = row[2]?.toString() || '';
-        // Remove leading apostrophe if present (we add it for text format)
         const phone = normalizePhoneNumber(phoneRaw.replace(/^'/, ''));
         
         if (phone) {
           existingGuests.set(phone, {
-            rowIndex: i + 1, // Sheets uses 1-based indexing
+            rowIndex: i + 1,
             timestamp: row[0] || '',
             guestName: row[1] || '',
             phoneNumber: phone,
             group: row[3] || '',
-            addedBy: row[4] || '',
+            numGuests: parseInt(row[4]) || 1,
+            likelyArrive: row[5]?.toLowerCase() === 'yes' || row[5]?.toLowerCase() === 'כן',
+            addedBy: row[6] || '',
           });
         }
       }
@@ -129,14 +134,12 @@ export async function deleteGuest(phoneNumber: string): Promise<boolean> {
   try {
     const sheets = getSheetsClient();
     
-    // Get spreadsheet to find sheet ID
     const spreadsheet = await sheets.spreadsheets.get({
       spreadsheetId: config.google.sheetId,
     });
     
     const sheetId = spreadsheet.data.sheets?.[0]?.properties?.sheetId || 0;
     
-    // Delete the row
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId: config.google.sheetId,
       requestBody: {
@@ -145,7 +148,7 @@ export async function deleteGuest(phoneNumber: string): Promise<boolean> {
             range: {
               sheetId: sheetId,
               dimension: 'ROWS',
-              startIndex: guest.rowIndex - 1, // 0-based for API
+              startIndex: guest.rowIndex - 1,
               endIndex: guest.rowIndex,
             },
           },
@@ -153,10 +156,7 @@ export async function deleteGuest(phoneNumber: string): Promise<boolean> {
       },
     });
 
-    // Remove from cache
     existingGuests.delete(normalized);
-    
-    // Reload to fix row indices (they shift after deletion)
     await loadExistingGuests();
     
     console.log(`🗑️ Deleted guest: ${guest.guestName}`);
@@ -175,7 +175,6 @@ export async function appendGuestToSheet(entry: GuestEntry): Promise<void> {
 
   const sheets = getSheetsClient();
   
-  // Normalize phone and prefix with ' for text format
   const normalizedPhone = normalizePhoneNumber(entry.phoneNumber);
   const phoneAsText = "'" + normalizedPhone;
   
@@ -184,18 +183,19 @@ export async function appendGuestToSheet(entry: GuestEntry): Promise<void> {
     entry.guestName,
     phoneAsText,
     entry.group,
+    entry.numGuests,
+    entry.likelyArrive ? 'Yes' : 'No',
     entry.addedBy,
   ]];
 
   const response = await sheets.spreadsheets.values.append({
     spreadsheetId: config.google.sheetId,
-    range: 'Sheet1!A:E',
+    range: 'Sheet1!A:G',
     valueInputOption: 'USER_ENTERED',
     insertDataOption: 'INSERT_ROWS',
     requestBody: { values },
   });
 
-  // Add to cache
   const updatedRange = response.data.updates?.updatedRange;
   const rowMatch = updatedRange?.match(/!A(\d+):/);
   const rowIndex = rowMatch ? parseInt(rowMatch[1]) : existingGuests.size + 2;
@@ -206,6 +206,8 @@ export async function appendGuestToSheet(entry: GuestEntry): Promise<void> {
     guestName: entry.guestName,
     phoneNumber: normalizedPhone,
     group: entry.group,
+    numGuests: entry.numGuests,
+    likelyArrive: entry.likelyArrive,
     addedBy: entry.addedBy,
   });
 
@@ -222,19 +224,32 @@ export async function initializeSheetHeaders(): Promise<void> {
 
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: config.google.sheetId,
-      range: 'Sheet1!A1:E1',
+      range: 'Sheet1!A1:G1',
     });
 
     if (response.data.values && response.data.values.length > 0) {
+      // Check if we need to update headers (add new columns)
+      const currentHeaders = response.data.values[0];
+      if (currentHeaders.length < 7) {
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: config.google.sheetId,
+          range: 'Sheet1!A1:G1',
+          valueInputOption: 'RAW',
+          requestBody: {
+            values: [['Timestamp', 'Guest Name', 'Phone Number', 'Group', 'Num Guests', 'Likely Arrive', 'Added By']],
+          },
+        });
+        console.log('✅ Sheet headers updated with new columns');
+      }
       return;
     }
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: config.google.sheetId,
-      range: 'Sheet1!A1:E1',
+      range: 'Sheet1!A1:G1',
       valueInputOption: 'RAW',
       requestBody: {
-        values: [['Timestamp', 'Guest Name', 'Phone Number', 'Group', 'Added By']],
+        values: [['Timestamp', 'Guest Name', 'Phone Number', 'Group', 'Num Guests', 'Likely Arrive', 'Added By']],
       },
     });
 

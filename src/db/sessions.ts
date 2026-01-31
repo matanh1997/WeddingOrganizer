@@ -2,8 +2,10 @@ export type SessionState =
   | 'NEW' 
   | 'AWAITING_NAME' 
   | 'PICK_PERSON'      // Leehe or Matan
-  | 'PICK_TYPE'        // Family or Friends
+  | 'PICK_TYPE'        // Family, Friends, or Family Friends
   | 'PICK_FAMILY'      // Heled/Maimon or Keisari/Maggor
+  | 'PICK_NUM_GUESTS'  // How many guests
+  | 'PICK_LIKELY'      // Will likely arrive?
   | 'CONFIRM_REPLACE'  // Confirm replacing existing guest
   | 'DONE';
 
@@ -15,6 +17,9 @@ export interface Session {
   guest_name: string | null;
   selected_person: string | null;
   selected_type: string | null;
+  selected_group: string | null;   // Final group name
+  num_guests: number | null;       // Number of guests
+  likely_arrive: boolean | null;   // Will likely arrive
 }
 
 // Simple in-memory store
@@ -33,6 +38,9 @@ export function createSession(userId: number): Session {
     guest_name: null,
     selected_person: null,
     selected_type: null,
+    selected_group: null,
+    num_guests: null,
+    likely_arrive: null,
   };
   sessions.set(userId, session);
   return session;
@@ -52,7 +60,6 @@ export function deleteSession(userId: number): void {
   sessions.delete(userId);
 }
 
-// For debugging
 export function getSessionCount(): number {
   return sessions.size;
 }

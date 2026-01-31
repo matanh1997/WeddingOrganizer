@@ -15,7 +15,6 @@ export const bot = new Telegraf(config.telegram.token);
 
 // Helper to format phone number for display
 function formatPhone(phone: string): string {
-  // First normalize the phone
   const normalized = normalizePhoneNumber(phone);
   
   if (normalized.startsWith('+972') && normalized.length >= 13) {
@@ -41,11 +40,13 @@ bot.start(async (ctx) => {
     '🇮🇱 *איך להוסיף אורח:*\n' +
     '1. שלחו איש קשר (📎 → Contact)\n' +
     '2. הקלידו את שם האורח\n' +
-    '3. בחרו קבוצה\n\n' +
+    '3. בחרו קבוצה\n' +
+    '4. ציינו מספר אורחים וסיכוי הגעה\n\n' +
     '🇬🇧 *To add a guest:*\n' +
     '1. Share a contact\n' +
     '2. Type the guest name\n' +
-    '3. Choose a group\n\n' +
+    '3. Choose a group\n' +
+    '4. Specify number of guests and likelihood\n\n' +
     'שלחו איש קשר כדי להתחיל! 📱',
     { parse_mode: 'Markdown' }
   );
@@ -90,7 +91,6 @@ bot.on('contact', async (ctx) => {
   const existingGuest = getExistingGuest(phone);
   
   if (existingGuest) {
-    // Show existing entry and ask if they want to replace
     updateSession(userId, {
       state: 'CONFIRM_REPLACE',
       selected_phone: phone,
@@ -101,6 +101,8 @@ bot.on('contact', async (ctx) => {
       `👤 *שם:* ${existingGuest.guestName}\n` +
       `📞 *טלפון:* ${formatPhone(existingGuest.phoneNumber)}\n` +
       `👥 *קבוצה:* ${existingGuest.group}\n` +
+      `👨‍👩‍👧 *מס׳ אורחים:* ${existingGuest.numGuests}\n` +
+      `✅ *יגיעו:* ${existingGuest.likelyArrive ? 'כן' : 'לא'}\n` +
       `📅 *נוסף:* ${new Date(existingGuest.timestamp).toLocaleDateString('he-IL')}\n\n` +
       `האם למחוק ולהחליף?`,
       {
@@ -149,7 +151,6 @@ bot.action(/^replace:(yes|no)$/, async (ctx) => {
     return;
   }
 
-  // Delete existing and proceed
   await ctx.answerCbQuery('מוחק...');
   
   const deleted = await deleteGuest(phone);
@@ -159,7 +160,6 @@ bot.action(/^replace:(yes|no)$/, async (ctx) => {
     return;
   }
 
-  // Now proceed with adding
   updateSession(userId, {
     state: 'AWAITING_NAME',
     phone_numbers: JSON.stringify([phone]),
@@ -197,6 +197,11 @@ bot.on('text', async (ctx) => {
       break;
 
     case 'CONFIRM_REPLACE':
+    case 'PICK_PERSON':
+    case 'PICK_TYPE':
+    case 'PICK_FAMILY':
+    case 'PICK_NUM_GUESTS':
+    case 'PICK_LIKELY':
       await ctx.reply('👆 בחרו מהכפתורים למעלה.');
       break;
 
@@ -283,9 +288,35 @@ bot.action(/^type:(friends|family|familyfriends)$/, async (ctx) => {
   const person = session.selected_person;
   
   if (type === 'friends') {
-    // Friends - no further split, save directly
+    // Friends - determine group and proceed to num guests
     const groupId: GroupId = person === 'leehe' ? 'leehe_friends' : 'matan_friends';
-    await saveGuest(ctx, session, groupId);
+    const groupName = GROUPS[groupId];
+    
+    updateSession(userId, {
+      state: 'PICK_NUM_GUESTS',
+      selected_type: type,
+      selected_group: groupName,
+    });
+    
+    await ctx.answerCbQuery();
+    await ctx.editMessageText(
+      `✅ ${groupName}\n\n👨‍👩‍👧 כמה אורחים?\n*How many guests?*`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback('1', 'numguests:1'),
+            Markup.button.callback('2', 'numguests:2'),
+            Markup.button.callback('3', 'numguests:3'),
+          ],
+          [
+            Markup.button.callback('4', 'numguests:4'),
+            Markup.button.callback('5', 'numguests:5'),
+            Markup.button.callback('6+', 'numguests:6'),
+          ],
+        ])
+      }
+    );
   } else {
     // Family or Family Friends - need to pick specific family
     updateSession(userId, {
@@ -335,9 +366,9 @@ bot.action(/^family:(keisari|maggor|heled|maimon)$/, async (ctx) => {
   }
 
   const person = session.selected_person;
-  const type = session.selected_type; // 'family' or 'familyfriends'
+  const type = session.selected_type;
   
-  // Determine the final group ID
+  // Determine the final group
   let groupId: GroupId;
   if (person === 'leehe') {
     if (type === 'family') {
@@ -353,28 +384,100 @@ bot.action(/^family:(keisari|maggor|heled|maimon)$/, async (ctx) => {
     }
   }
 
-  await saveGuest(ctx, session, groupId);
+  const groupName = GROUPS[groupId];
+  
+  updateSession(userId, {
+    state: 'PICK_NUM_GUESTS',
+    selected_group: groupName,
+  });
+
+  await ctx.answerCbQuery();
+  await ctx.editMessageText(
+    `✅ ${groupName}\n\n👨‍👩‍👧 כמה אורחים?\n*How many guests?*`,
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [
+          Markup.button.callback('1', 'numguests:1'),
+          Markup.button.callback('2', 'numguests:2'),
+          Markup.button.callback('3', 'numguests:3'),
+        ],
+        [
+          Markup.button.callback('4', 'numguests:4'),
+          Markup.button.callback('5', 'numguests:5'),
+          Markup.button.callback('6+', 'numguests:6'),
+        ],
+      ])
+    }
+  );
+});
+
+// Handle number of guests selection
+bot.action(/^numguests:(\d+)$/, async (ctx) => {
+  const userId = ctx.from!.id;
+  const numGuests = parseInt(ctx.match[1]);
+  
+  const session = getSession(userId);
+  if (!session || session.state !== 'PICK_NUM_GUESTS') {
+    await ctx.answerCbQuery('שלחו איש קשר להתחלה');
+    return;
+  }
+
+  updateSession(userId, {
+    state: 'PICK_LIKELY',
+    num_guests: numGuests,
+  });
+
+  await ctx.answerCbQuery();
+  await ctx.editMessageText(
+    `✅ ${numGuests} אורחים\n\n🤔 צפויים להגיע?\n*Will likely arrive?*`,
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('✅ כן / Yes', 'likely:yes')],
+        [Markup.button.callback('❌ לא / No', 'likely:no')],
+      ])
+    }
+  );
+});
+
+// Handle likely arrive selection
+bot.action(/^likely:(yes|no)$/, async (ctx) => {
+  const userId = ctx.from!.id;
+  const likely = ctx.match[1] === 'yes';
+  
+  const session = getSession(userId);
+  if (!session || session.state !== 'PICK_LIKELY') {
+    await ctx.answerCbQuery('שלחו איש קשר להתחלה');
+    return;
+  }
+
+  updateSession(userId, {
+    likely_arrive: likely,
+  });
+
+  await saveGuest(ctx, session, likely);
 });
 
 // Save guest to Google Sheets
-async function saveGuest(ctx: any, session: Session, groupId: GroupId) {
+async function saveGuest(ctx: any, session: Session, likelyArrive: boolean) {
   const userId = ctx.from!.id;
-  const { guest_name, selected_phone } = session;
+  const { guest_name, selected_phone, selected_group, num_guests } = session;
   
-  if (!guest_name || !selected_phone) {
+  if (!guest_name || !selected_phone || !selected_group) {
     await ctx.answerCbQuery('חסרים פרטים, התחילו מחדש');
     createSession(userId);
     return;
   }
-
-  const groupName = GROUPS[groupId];
 
   try {
     await appendGuestToSheet({
       timestamp: new Date().toISOString(),
       guestName: guest_name,
       phoneNumber: selected_phone,
-      group: groupName,
+      group: selected_group,
+      numGuests: num_guests || 1,
+      likelyArrive: likelyArrive,
       addedBy: ctx.from!.username || ctx.from!.id.toString(),
     });
 
@@ -386,7 +489,9 @@ async function saveGuest(ctx: any, session: Session, groupId: GroupId) {
       `🎉 *האורח נוסף בהצלחה!*\n\n` +
       `👤 *שם:* ${guest_name}\n` +
       `📞 *טלפון:* ${formatPhone(selected_phone)}\n` +
-      `👥 *קבוצה:* ${groupName}\n\n` +
+      `👥 *קבוצה:* ${selected_group}\n` +
+      `👨‍👩‍👧 *מס׳ אורחים:* ${num_guests || 1}\n` +
+      `✅ *יגיעו:* ${likelyArrive ? 'כן' : 'לא'}\n\n` +
       `שלחו איש קשר נוסף להוספת אורח 📱`,
       { parse_mode: 'Markdown' }
     );
